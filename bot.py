@@ -30,14 +30,14 @@ fake = Faker()
 bot = telebot.TeleBot(API_TOKEN)
 DB_FILE = "bot_database.json"
 
-# --- UNIQUE LOGIN GENERATOR (10 to 20 chars) ---
-def generate_unique_login(name):
+# --- CUSTOM LOGIN GENERATOR ---
+def generate_custom_login(name):
+    prefix = name.lower()[:3] # নামের প্রথম ৩ অক্ষর
     length = random.randint(10, 20)
-    prefix = name.lower()[:3]
     chars = string.ascii_lowercase + string.digits
-    remaining_length = length - len(prefix)
+    remaining_length = length - (len(prefix) + 1) # ১ বাদ দেওয়া হয়েছে '_' এর জন্য
     random_part = ''.join(random.choice(chars) for _ in range(remaining_length))
-    return prefix + random_part
+    return f"{prefix}_{random_part}"
 
 # --- DATABASE FUNCTIONS ---
 def load_db():
@@ -122,6 +122,11 @@ def handle_text(message):
         u = db["users"].get(uid, {})
         bot.send_message(message.chat.id, f"👤 User: {message.from_user.first_name}\n🆔 ID: `{uid}`\n💰 Balance: ${u.get('balance',0)}")
 
+    elif message.text == "❌ Cancel Task":
+        db["users"][uid]["active_task"] = None
+        save_db(db)
+        bot.send_message(message.chat.id, "❌ Task Cancelled.", reply_markup=main_menu())
+
     elif message.from_user.id == ADMIN_ID:
         if message.text == "➕ Add Method":
             msg = bot.send_message(message.chat.id, "Enter Method Name:")
@@ -135,7 +140,7 @@ def handle_text(message):
             bot.register_next_step_handler(msg, set_min_logic)
 
     if message.text == "✅ Submit Task":
-        active = db["users"].get(uid, {}).get("active_task")
+        active = db["users"][uid].get("active_task")
         if active:
             msg = bot.send_message(message.chat.id, "🔐 Enter your **2FA Secret Key**:")
             bot.register_next_step_handler(msg, process_submission)
@@ -266,15 +271,19 @@ def bal_edit_step_2(message, uid):
 def start_task_ui(message, task):
     db = load_db()
     f, l = fake.first_name(), fake.last_name()
-    # ১০ থেকে ২০ অক্ষরের ইউনিক লগইন জেনারেট করা হচ্ছে
-    login = generate_unique_login(f)
+    # ১০ থেকে ২০ অক্ষরের ইউনিক লগইন জেনারেট (prefix_random)
+    login = generate_custom_login(f)
     email = db["emails"].pop(0) if db["emails"] else "Contact Admin"
     db["users"][str(message.from_user.id)]["active_task"] = {"name": task['name'], "f_name": f, "l_name": l, "login": login, "pass": task['password'], "email": email, "reward": task['reward']}
     save_db(db)
     text = f"🎯 Task: {task['name']}\n👤 Name: {f} {l}\n🔑 Login: `{login}`\n🔐 Pass: `{task['password']}`\n📧 Email: `{email}`\n💰 Reward: ${task['reward']}"
     m = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("📩 Get Code", url="https://maildrop.cc/"), types.InlineKeyboardButton("🔐 Get 2FA", callback_data="get_2fa"))
     bot.send_message(message.chat.id, text, reply_markup=m)
-    bot.send_message(message.chat.id, "Submit or Cancel?", reply_markup=types.ReplyKeyboardMarkup(resize_keyboard=True).add("✅ Submit Task", "❌ Cancel Task"))
+    
+    # সাবমিট কিবোর্ড
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("✅ Submit Task", "❌ Cancel Task")
+    bot.send_message(message.chat.id, "Submit or Cancel?", reply_markup=markup)
 
 def process_submission(message):
     uid = str(message.from_user.id)
