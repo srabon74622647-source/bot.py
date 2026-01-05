@@ -1,0 +1,5 @@
+pyTelegramBotAPI
+pyotp
+Faker
+flask
+gunicorn
