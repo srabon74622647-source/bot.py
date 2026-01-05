@@ -4,6 +4,8 @@ import json
 import os
 import sys
 import io
+import random
+import string
 from telebot import types
 from faker import Faker
 from flask import Flask
@@ -27,6 +29,15 @@ ADMIN_ID = 8220394592
 fake = Faker()
 bot = telebot.TeleBot(API_TOKEN)
 DB_FILE = "bot_database.json"
+
+# --- UNIQUE LOGIN GENERATOR (10 to 20 chars) ---
+def generate_unique_login(name):
+    length = random.randint(10, 20)
+    prefix = name.lower()[:3]
+    chars = string.ascii_lowercase + string.digits
+    remaining_length = length - len(prefix)
+    random_part = ''.join(random.choice(chars) for _ in range(remaining_length))
+    return prefix + random_part
 
 # --- DATABASE FUNCTIONS ---
 def load_db():
@@ -208,7 +219,6 @@ def handle_callbacks(call):
     elif call.data == "adm_pending":
         if not db["pending"]: return bot.answer_callback_query(call.id, "No pending tasks.")
         for sid, d in db["pending"].items():
-            # এখানে Email অ্যাড করা হয়েছে
             text = f"⏳ **Submission ID:** {sid}\n👤 **User:** `{d['uid']}`\n🔑 **Login:** `{d['login']}`\n🔐 **Pass:** `{d['pass']}`\n📧 **Email:** `{d['email']}`\n🔑 **2FA:** `{d['2fa']}`"
             m = types.InlineKeyboardMarkup().add(
                 types.InlineKeyboardButton("Approve", callback_data=f"ap_{sid}"), 
@@ -256,7 +266,8 @@ def bal_edit_step_2(message, uid):
 def start_task_ui(message, task):
     db = load_db()
     f, l = fake.first_name(), fake.last_name()
-    login = f"{f.lower()}{fake.random_int(10, 99)}"
+    # ১০ থেকে ২০ অক্ষরের ইউনিক লগইন জেনারেট করা হচ্ছে
+    login = generate_unique_login(f)
     email = db["emails"].pop(0) if db["emails"] else "Contact Admin"
     db["users"][str(message.from_user.id)]["active_task"] = {"name": task['name'], "f_name": f, "l_name": l, "login": login, "pass": task['password'], "email": email, "reward": task['reward']}
     save_db(db)
@@ -276,7 +287,6 @@ def process_submission(message):
         save_db(db)
         bot.send_message(message.chat.id, "✅ Submitted!", reply_markup=main_menu())
         
-        # অ্যাডমিনকে পাঠানো মেসেজে Email যোগ করা হলো
         admin_info = f"🔔 **New Submission!**\nID: {sid}\nLogin: `{active['login']}`\nPass: `{active['pass']}`\nEmail: `{active['email']}`\n2FA: `{message.text}`"
         m = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("Approve", callback_data=f"ap_{sid}"), types.InlineKeyboardButton("Progress", callback_data=f"pg_{sid}"), types.InlineKeyboardButton("Reject", callback_data=f"rj_{sid}"))
         bot.send_message(ADMIN_ID, admin_info, reply_markup=m, parse_mode="Markdown")
